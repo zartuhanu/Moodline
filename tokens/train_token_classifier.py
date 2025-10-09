@@ -42,8 +42,8 @@ SEED = 1337
 
 # Balancing: keep sampler, drop class-weighted loss (Option A)
 USE_SAMPLER = True
-USE_CLASS_WEIGHTS = False       # <- Option A: OFF
-LABEL_SMOOTH = 0.10             # <- Option A: ON
+USE_CLASS_WEIGHTS = False      
+LABEL_SMOOTH = 0.10            
 # ==============================
 
 def set_seed(seed=42):
