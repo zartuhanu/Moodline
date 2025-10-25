@@ -1,5 +1,22 @@
 #!/usr/bin/env python3
 # Baseline: train on non-neutral, predict on neutral and export confidences.
+"""
+Train a simple classifier on non-neutral labels, then predict labels for
+the 'neutral' rows and export per-class probabilities.
+
+Input:
+    data/labels.csv
+        Columns: json_path, tempo, mode, tonic, density, tempo_band, density_bucket, mood
+
+Outputs (under data/):
+    data/neutral_predictions.csv   – predictions for the 'neutral' subset with confidences
+    data/rf_baseline_model.json    – lightweight model metadata (not a pickle)
+
+Console:
+    - Validation report on a held-out split of the non-neutral set
+    - Confusion matrix
+    - Neutral-set prediction distribution and high-confidence count
+"""
 
 from pathlib import Path
 import math
@@ -13,16 +30,16 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix
 
-# ======================================================
-# EDIT THESE PATHS
-# ======================================================
-LABELS_CSV = Path("token_dataset/labels.csv")   # produced by assign_labels.py
-OUT_DIR     = Path("token_dataset")
+
+# ------------ I/O ------------
+LABELS_CSV = Path("data/labels.csv")          # produced by assign_labels.py
+OUT_DIR     = Path("data")
 PRED_CSV    = OUT_DIR / "neutral_predictions.csv"
 MODEL_JSON  = OUT_DIR / "rf_baseline_model.json"  # stores basic metadata (not pickle)
+
 CONFIDENCE_THRESHOLD = 0.70   # flag high-confidence predictions
 RANDOM_SEED = 42
-# ======================================================
+# ==========================================
 
 # --- Helpers ---
 TONIC_TO_PC = {
@@ -35,29 +52,31 @@ TONIC_TO_PC = {
 }
 
 def normalize_tonic(s: str) -> str:
+    """Normalize tonic spelling: accepts 'F#', 'Gb', 'Bb', or prior 'FS'."""
     if not s:
         return "C"
     s = s.strip()
-    # Accept forms like 'F#', 'Gb', 'Bb' and our earlier 'FS'
-    return s.replace("♯","#").replace("♭","b").replace("S","#")
+    return s.replace("♯", "#").replace("♭", "b").replace("S", "#")
 
 def tonic_to_unit_circle(tonic: str):
-    """Return (cos, sin) on pitch-class circle; default to C if unknown."""
+    """Return (cos, sin) for pitch class on the unit circle; defaults to C if unknown."""
     t = normalize_tonic(tonic)
     pc = TONIC_TO_PC.get(t, 0)
     ang = 2*math.pi*pc/12.0
     return math.cos(ang), math.sin(ang)
 
 def is_minor(mode: str) -> int:
+    """Binary minor flag from mode string (prefix 'min' → 1, else 0)."""
     return 1 if str(mode or "").lower().startswith("min") else 0
 
 def build_features(df: pd.DataFrame):
+    """Assemble simple numeric features for classification."""
     # Base numeric features
     tempo = df["tempo"].astype(float).to_numpy().reshape(-1,1)
     density = df["density"].astype(float).to_numpy().reshape(-1,1)
     minor = df["mode"].apply(is_minor).astype(int).to_numpy().reshape(-1,1)
 
-    # Key on circle of fifths (sin/cos of pitch class)
+    # Key on pitch-class circle (cos/sin)
     cos_list, sin_list = [], []
     for t in df["tonic"].fillna("C").astype(str):
         c, s = tonic_to_unit_circle(t)
@@ -90,7 +109,7 @@ def main():
     X_all, feat_names = build_features(df_train)
     y_all = df_train["mood"].astype(str).to_numpy()
 
-    # Standardize tempo/density only (tree models don't need it, but harmless if you switch models later)
+    # Standardize tempo/density only (tree models don't need it, but harmless if switching models later)
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_all)
 
@@ -144,7 +163,7 @@ def main():
                     *[round(float(p), 6) for p in proba[i]]
                 ])
 
-        print(f"\n✅ Wrote neutral predictions to: {PRED_CSV}")
+        print(f"\n Wrote neutral predictions to: {PRED_CSV}")
         # quick summary
         pred_counts = pd.Series(preds).value_counts().sort_values(ascending=False)
         print("\nPredicted label distribution over NEUTRAL rows:")
@@ -166,7 +185,7 @@ def main():
         "confidence_threshold": CONFIDENCE_THRESHOLD,
     }, indent=2))
 
-    print(f"\nℹ️ Saved model metadata to: {MODEL_JSON}")
+    print(f"\n Saved model metadata to: {MODEL_JSON}")
 
 if __name__ == "__main__":
     main()

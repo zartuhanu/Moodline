@@ -1,18 +1,35 @@
 #!/usr/bin/env python3
+"""
+Assign heuristic mood labels from per-song features (tempo, mode, density).
+
+Input:
+    data/features.csv
+        Columns (from build_tokens.py): json_path, tempo, mode, tonic, density
+
+Output:
+    data/labels.csv
+        Columns: json_path, tempo, mode, tonic, density,
+                 tempo_band, density_bucket, mood
+
+Console diagnostics:
+    - Label distribution
+    - Tempo and density histograms
+    - Tempo band × Mode crosstab (major/minor)
+"""
+
 import csv
 from pathlib import Path
 from collections import Counter, defaultdict
 import math
 
-# ======================================================
-# EDIT THESE PATHS / SETTINGS
-# ======================================================
-FEATURES_CSV = Path("token_dataset/features.csv")   # input from build_tokens.py
-OUT_DIR      = Path("token_dataset")
+# ---------- I/O locations ----------
+
+FEATURES_CSV = Path("data/features.csv")   # input from build_tokens.py
+OUT_DIR      = Path("data")                # where to save outputs
 LABELS_CSV   = OUT_DIR / "labels.csv"
 
 # ---- Heuristic thresholds (tweak and re-run) ----
-# Tempo bands (bpm):  slow if < SLOW_MAX, medium if [SLOW_MAX, MED_MAX), else fast
+# Tempo bands (bpm): slow if < SLOW_MAX, medium if [SLOW_MAX, MED_MAX), else fast
 SLOW_MAX = 90.0
 MED_MAX  = 110.0
 
@@ -40,19 +57,23 @@ BAR_WIDTH = 40  # characters
 
 # -------- helpers --------
 def tempo_band(bpm: float) -> str:
+    """Map BPM to 'slow' | 'med' | 'fast' using SLOW_MAX and MED_MAX."""
     if bpm < SLOW_MAX: return "slow"
     if bpm < MED_MAX:  return "med"
     return "fast"
 
 def density_bucket(d: float) -> str:
+    """Bucket notes-per-bar into 'low' | 'med' | 'high' using LOW_DENS_MAX/HIGH_DENS_MIN."""
     if d <= LOW_DENS_MAX:  return "low"
     if d >= HIGH_DENS_MIN: return "high"
     return "med"
 
 def is_minor(mode: str) -> bool:
+    """True if mode string denotes minor (prefix 'min'); robust to casing/whitespace."""
     return str(mode or "").strip().lower().startswith("min")
 
 def map_to_label(bpm: float, mode: str, density: float) -> str:
+    """Heuristic mapping from tempo band × density × mode → mood label."""
     t = tempo_band(bpm)
     db = density_bucket(density)
     minor = is_minor(mode)
@@ -66,7 +87,7 @@ def map_to_label(bpm: float, mode: str, density: float) -> str:
     return LABELS["fallback"]
 
 def hist_counts(values, bins):
-    """Return counts per bin defined by edges like [b0,b1,b2,...]. Last bin is [bn-1, +inf)."""
+    """Count values into half-open intervals [b_i, b_{i+1}); values > last edge go to final bin."""
     counts = [0]*(len(bins)-1)
     for v in values:
         placed = False
@@ -76,11 +97,12 @@ def hist_counts(values, bins):
                 counts[i] += 1
                 placed = True
                 break
-        if not placed and values:  # if above last bound, count in last bin
+        if not placed and values:  # above last bound
             counts[-1] += 1
     return counts
 
 def print_hist(title, bins, counts, total):
+    """Print a fixed-width horizontal histogram with percentage annotations."""
     print(f"\n{title}")
     maxc = max(counts) if counts else 1
     for i, c in enumerate(counts):
@@ -91,11 +113,12 @@ def print_hist(title, bins, counts, total):
         print(f"  {rng:>9} | {'█'*bar_len:<{BAR_WIDTH}} {c:5d}  ({pct:5.1f}%)")
 
 def crosstab(rows, row_key, col_key):
-    """rows: list of dict; return dict[row][col]=count"""
+    """Build contingency table: dict[row_val][col_val] -> count."""
     R = defaultdict(lambda: Counter())
     for r in rows:
         R[row_key(r)][col_key(r)] += 1
     return R
+
 
 # -------- main --------
 def main():
@@ -103,7 +126,7 @@ def main():
         raise SystemExit(f"Features file not found: {FEATURES_CSV}")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # load features
+    # Load features
     items = []
     with FEATURES_CSV.open("r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -116,10 +139,10 @@ def main():
                 jpath = row.get("json_path","")
                 items.append({"bpm": bpm, "density": dens, "mode": md, "tonic": tnc, "json_path": jpath})
             except Exception:
-                # skip malformed rows silently
+                # Skip malformed rows silently
                 continue
 
-    # assign labels
+    # Assign labels
     counts = Counter()
     with LABELS_CSV.open("w", newline="", encoding="utf-8") as f_out:
         fieldnames = ["json_path","tempo","mode","tonic","density","tempo_band","density_bucket","mood"]
@@ -141,23 +164,23 @@ def main():
             })
             counts[mood] += 1
 
-    # summary
+    # Summary
     total = sum(counts.values())
-    print(f"✅ Wrote labels to: {LABELS_CSV}")
+    print(f"Wrote labels to: {LABELS_CSV}")
     print("\nLabel distribution:")
     for k, v in counts.most_common():
         pct = 100.0 * v / total if total else 0.0
         print(f"  {k:12s} {v:6d}  ({pct:5.1f}%)")
 
-    # histograms
-    tempos   = [it["bpm"] for it in items]
-    densities= [it["density"] for it in items]
-    t_counts = hist_counts(tempos, TEMPO_BINS)
-    d_counts = hist_counts(densities, DENSITY_BINS)
+    # Histograms
+    tempos    = [it["bpm"] for it in items]
+    densities = [it["density"] for it in items]
+    t_counts  = hist_counts(tempos, TEMPO_BINS)
+    d_counts  = hist_counts(densities, DENSITY_BINS)
     print_hist("Tempo histogram (bpm)", TEMPO_BINS, t_counts, total)
     print_hist("Density histogram (notes/bar)", DENSITY_BINS, d_counts, total)
 
-    # small crosstab: tempo_band x mode (major/minor)
+    # Crosstab: tempo_band × mode (major/minor)
     rows = [{
         "tb": tempo_band(it["bpm"]),
         "mm": "minor" if is_minor(it["mode"]) else "major"
@@ -174,4 +197,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-""

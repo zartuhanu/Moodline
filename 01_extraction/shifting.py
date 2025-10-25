@@ -1,75 +1,68 @@
-#!/usr/bin/env python3
-"""
-Shift bass note timings in JSON outputs so the first note starts at 0s.
-
-Overwrites files in place. Assumes JSONs produced by extract_basslines.py.
-
-Example:
-    python shifting.py --root output_basslines
-"""
-
-from __future__ import annotations
-
-import argparse
+import os
 import json
 from pathlib import Path
-from typing import Dict, Any, List
 
+def shift_bassline_file(json_path, in_place=True, out_dir=None):
+    """
+    Loads one bassline JSON, subtracts the first note's start_tick from every event,
+    then saves back (in place or into out_dir preserving subfolders).
+    """
+    with open(json_path, 'r') as f:
+        data = json.load(f)
 
-def shift_file(json_path: Path) -> bool:
-    """Shift a single JSON file in place. Returns True if modified."""
-    try:
-        data: Dict[str, Any] = json.loads(json_path.read_text(encoding="utf-8"))
-    except Exception as e:
-        print(f"Failed to read {json_path}: {e}")
-        return False
+    events = data.get('bassline', [])
+    if not events:
+        return  # nothing to do
 
-    notes: List[Dict[str, Any]] = data.get("notes", [])
-    if not notes:
-        return False
+    # find the minimum start_tick (should be the first event)
+    min_start = min(ev['start_tick'] for ev in events)
 
-    t0 = min(float(n.get("start", 0.0)) for n in notes)
-    if t0 <= 0:
-        return False
+    # shift every event
+    for ev in events:
+        ev['start_tick'] = ev['start_tick'] - min_start
 
-    for n in notes:
-        n["start"] = float(n["start"]) - t0
-        n["end"] = float(n["end"]) - t0
+    # update the data
+    data['bassline'] = events
 
-    try:
-        json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        return True
-    except Exception as e:
-        print(f"Failed to write {json_path}: {e}")
-        return False
+    # determine output path
+    if in_place:
+        out_path = json_path
+    else:
+        assert out_dir is not None, "If not in_place, out_dir must be provided"
+        relative = json_path.relative_to(json_path.parents[1])
+        out_path = out_dir / relative
+        out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # save
+    with open(out_path, 'w') as f:
+        json.dump(data, f, indent=2)
 
-def process_tree(root: Path) -> None:
-    json_files = list(root.rglob("*.json"))
-    if not json_files:
-        print(f"No JSON files found under: {root}")
-        return
+def shift_all_basslines(input_dir, in_place=True, output_dir=None):
+    """
+    Walk input_dir for *.json, and shift each bassline so first note starts at 0.
+    """
+    input_dir = Path(input_dir)
+    if not in_place:
+        assert output_dir is not None, "output_dir required when not in_place"
+        output_dir = Path(output_dir)
 
-    changed = 0
-    for jp in json_files:
-        if shift_file(jp):
-            changed += 1
-            print(f"Shifted: {jp}")
-
-    print(f"Done. Shifted {changed} / {len(json_files)} files.")
-
-
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Shift bass note timings to start at 0s (in place).")
-    p.add_argument("--root", type=Path, default=Path("output_basslines"),
-                   help="Root directory containing JSON outputs.")
-    return p.parse_args()
-
-
-def main() -> None:
-    args = parse_args()
-    process_tree(args.root)
-
+    for root, _, files in os.walk(input_dir):
+        for fn in files:
+            if not fn.lower().endswith('.json'):
+                continue
+            full = Path(root) / fn
+            shift_bassline_file(
+                full,
+                in_place=in_place,
+                out_dir=output_dir
+            )
+            print(f"Shifted: {full}")
 
 if __name__ == "__main__":
-    main()
+    # ——— configure these paths ———
+    INPUT_DIR  = "output_basslines"
+    IN_PLACE   = True           # set False to write into OUTPUT_DIR instead
+    OUTPUT_DIR = "shifted_json"  # only used if IN_PLACE=False
+    # —————————————————————————————————
+
+    shift_all_basslines(INPUT_DIR, in_place=IN_PLACE, output_dir=OUTPUT_DIR)
