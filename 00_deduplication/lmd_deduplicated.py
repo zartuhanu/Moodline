@@ -1,25 +1,41 @@
+#!/usr/bin/env python3
+"""
+Deduplicate versioned MIDI files in the Lakh MIDI Dataset (LMD) or similar structure.
+
+Removes duplicate song versions such as:
+    Song.mid, Song.1.mid, Song.2.mid, ...
+keeping only the first unique base name encountered.
+
+Input:
+    lmd_clean/           – original MIDI dataset
+Output:
+    lmd_deduplicated/    – deduplicated dataset (mirrors subfolder structure)
+"""
+
 import os
 import shutil
 from pathlib import Path
 
-# Source and destination directories
-src_dir = Path("lmd_clean")
-dst_dir = Path("lmd_deduplicated")
+# ---------- Paths ----------
+src_dir = Path("lmd_clean")          # source directory with raw MIDI files
+dst_dir = Path("lmd_deduplicated")   # destination for deduplicated files
 dst_dir.mkdir(parents=True, exist_ok=True)
 
-# To track which songs we've already copied
+# Track unique song names to avoid duplicates
 seen_songs = set()
 
+# ---------- Main loop ----------
 for root, _, files in os.walk(src_dir):
     for file in files:
         if file.endswith(".mid"):
-            # Remove version suffixes like '.1.mid'
+            # Remove numeric version suffixes like '.1.mid' or '.2.mid'
             base_name = file
             if '.' in file:
                 parts = file.split('.')
-                if parts[-2].isdigit():
+                if len(parts) >= 3 and parts[-2].isdigit():
                     base_name = '.'.join(parts[:-2]) + '.mid'
-            # Add unique songs only
+
+            # Copy only the first occurrence of each unique song
             if base_name not in seen_songs:
                 seen_songs.add(base_name)
                 src_path = Path(root) / file
