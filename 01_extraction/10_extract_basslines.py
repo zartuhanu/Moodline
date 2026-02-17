@@ -76,7 +76,7 @@ def extract_true_tempo(midi_path, min_bpm=40, max_bpm=240):
 
 def extract_bassline_and_tempo(midi_path, grid_subdiv=4):
     """
-    Extract tempo and bassline notes, then quantize to a fixed tick grid.
+    Extract tempo and bassline notes, then quantize to a fixed tick grid. Uses the tempo gathered by extract_true_tempo
 
     Heuristics:
         - Prefer GM bass programs (33–40 → 32–39 zero-indexed).
@@ -146,10 +146,9 @@ def save_bassline_json(data, output_path):
 
 
 def main():
-    # ——— Update these two paths as needed ———
     dataset_dir = Path("lmd_deduplicated")
     output_dir  = Path("output_basslines")
-    # ————————————————————————————————
+    
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for root, _, files in os.walk(dataset_dir):
@@ -166,7 +165,7 @@ def main():
             try:
                 data = extract_bassline_and_tempo(midi_path)
             except Exception as e:
-                print(f"⚠️  Skipped {midi_path}: {e}")
+                print(f" Skipped {midi_path}: {e}")
                 continue
 
             save_bassline_json(data, out_json)
