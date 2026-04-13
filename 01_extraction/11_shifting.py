@@ -17,15 +17,17 @@ import json
 from pathlib import Path
 
 
-def shift_bassline_file(json_path, in_place=True, out_dir=None):
+def shift_bassline_file(json_path, in_place=True, out_dir=None, root_dir=None):
     """
     Load one bassline JSON, subtract the first note's start_tick from every event,
     then save either in place or into a mirrored path under out_dir.
 
     Args:
         json_path: Path to a single bassline JSON file.
-        in_place: If True, overwrite the file in place.
-        out_dir:  Target root directory when in_place=False.
+        in_place:  If True, overwrite the file in place.
+        out_dir:   Target root directory when in_place=False.
+        root_dir:  Source root used to compute the relative output path.
+                   Defaults to json_path.parents[1] when None.
     """
     with open(json_path, 'r') as f:
         data = json.load(f)
@@ -48,7 +50,8 @@ def shift_bassline_file(json_path, in_place=True, out_dir=None):
         out_path = json_path
     else:
         assert out_dir is not None, "If not in_place, out_dir must be provided"
-        relative = json_path.relative_to(json_path.parents[1])
+        base = Path(root_dir) if root_dir is not None else json_path.parents[1]
+        relative = json_path.relative_to(base)
         out_path = Path(out_dir) / relative
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -72,7 +75,7 @@ def shift_all_basslines(input_dir, in_place=True, output_dir=None):
             if not fn.lower().endswith('.json'):
                 continue
             full = Path(root) / fn
-            shift_bassline_file(full, in_place=in_place, out_dir=output_dir)
+            shift_bassline_file(full, in_place=in_place, out_dir=output_dir, root_dir=input_dir)
             print(f"Shifted: {full}")
 
 

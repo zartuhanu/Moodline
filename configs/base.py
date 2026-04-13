@@ -313,8 +313,7 @@ def main():
             if step < WARMUP_STEPS:
                 lr = LR * (step+1) / max(1, WARMUP_STEPS)
                 for g in opt.param_groups: g["lr"] = lr
-            with torch.no_grad(): pass
-            with (torch.amp.autocast(device_type="cuda", dtype=torch.float16) if device.type=="cuda" else nullcontext()):
+            with amp_ctx():
                 logit, _ = model(xb)
                 loss = crit(logit, yb)
             opt.zero_grad(set_to_none=True)
