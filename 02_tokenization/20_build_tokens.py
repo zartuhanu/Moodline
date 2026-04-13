@@ -34,7 +34,11 @@ def key_token(tonic: str, mode: str) -> str:
     """Key token like <KEY_C> or <KEY_Am> (simple enharmonic normalization)."""
     mode = (mode or "").lower()
     is_minor = mode.startswith("min")
-    t = (tonic or "C").upper().replace("#","S").replace("B","b")  # C#, Bb → CS, Bb
+    raw = (tonic or "C").strip()
+    root = raw[0].upper() if raw else "C"
+    acc_char = raw[1] if len(raw) > 1 else ""
+    acc = "S" if acc_char == "#" else ("b" if acc_char.lower() == "b" else "")
+    t = root + acc
     return f"<KEY_{t}{'m' if is_minor else ''}>"
 
 def vel_bin(v: int, bins: int = 8) -> int:
